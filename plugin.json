@@ -1,0 +1,38 @@
+{
+  "name": "heading-master",
+  "author": "马书来",
+  "url": "https://github.com/mashulai84-max/heading-master",
+  "version": "0.4.0",
+  "minAppVersion": "3.8.4",
+  "backends": [
+    "all"
+  ],
+  "frontends": [
+    "all"
+  ],
+  "displayName": {
+    "default": "Heading Master",
+    "zh-CN": "智能标题"
+  },
+  "description": {
+    "default": "Turn numbered paragraphs into leveled headings, split heading out of running text, and batch-adjust existing heading levels.",
+    "zh-CN": "把带中文/数字序号的段落一键转为分级标题，标题混在正文里时自动拆出来；也支持批量调整已有标题的层级。"
+  },
+  "readme": {
+    "default": "README.md"
+  },
+  "icon": "icon.png",
+  "keywords": [
+    "heading",
+    "headings",
+    "outline",
+    "numbering",
+    "toc",
+    "标题",
+    "大纲",
+    "序号",
+    "层级",
+    "转换",
+    "格式化"
+  ]
+}
