@@ -276,6 +276,7 @@ heading-master/
 ├── index.js      # 规则引擎 + 界面 + 写入，纯 CJS，无构建步骤
 ├── index.css
 ├── icon.png      # 160×160
+├── preview.png   # 集市详情页顶部预览大图
 ├── README.md
 ├── LICENSE       # MIT
 ├── assets/       # README 插图（界面截图 + 收款码，可整目录删掉，不影响插件）

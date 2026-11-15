@@ -22,6 +22,7 @@
     "default": "README.md"
   },
   "icon": "icon.png",
+  "preview": "preview.png",
   "keywords": [
     "heading",
     "headings",
