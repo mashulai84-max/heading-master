@@ -1,0 +1,40 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "*"
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Build package.zip
+        run: |
+          rm -f package.zip
+          zip -r package.zip \
+            index.js \
+            index.css \
+            plugin.json \
+            icon.png \
+            preview.png \
+            README.md \
+            LICENSE \
+            i18n \
+            assets
+          echo "--- 包内文件 ---"
+          unzip -l package.zip
+
+      - name: Publish release
+        uses: ncipollo/release-action@v1
+        with:
+          artifacts: "package.zip"
+          allowUpdates: true
+          omitBodyDuringUpdate: true
+          token: ${{ secrets.GITHUB_TOKEN }}
