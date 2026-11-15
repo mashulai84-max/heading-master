@@ -1,0 +1,13 @@
+{
+  "pluginName": "Heading Master",
+  "dialogTitle": "Convert numbered paragraphs to headings",
+  "settingsTitle": "Heading Master · Settings",
+  "levelTitle": "Adjust heading levels",
+  "menuConvert": "Heading Master: convert selected blocks",
+  "menuLevel": "Heading Master: adjust heading levels of selected blocks",
+  "command": {
+    "convertDoc": "Heading Master: convert current document",
+    "levelAdjust": "Heading Master: adjust heading levels",
+    "undoLast": "Heading Master: undo last conversion"
+  }
+}

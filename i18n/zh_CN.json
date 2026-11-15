@@ -1,0 +1,13 @@
+{
+  "pluginName": "智能标题",
+  "dialogTitle": "智能标题转换",
+  "settingsTitle": "智能标题 · 设置",
+  "levelTitle": "调整标题层级",
+  "menuConvert": "智能标题：转换选中块",
+  "menuLevel": "智能标题：调整选中块的标题层级",
+  "command": {
+    "convertDoc": "智能标题：转换当前文档",
+    "levelAdjust": "智能标题：调整标题层级",
+    "undoLast": "智能标题：撤销上次转换"
+  }
+}
