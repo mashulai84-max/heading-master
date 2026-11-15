@@ -36,9 +36,14 @@ const DEFAULT_SETTINGS = {
   customLevel: 0, // 0 = 跟随上下文（上一个标题 +1）
   customStrict: true, // 严格：关键词后必须是空格/冒号或段末
   colonMin: 5, // 「短词：正文」至少出现这么多条，才整篇启用
+  bareMax: 20, // 独立短段落不超过这么多字，才可能当标题
+  bareMin: 2, // 全篇至少这么多条「短段落」，才启用该规则
+  ordinalMin: 2, // 全篇至少这么多条「第一，…」，才启用该规则
   rules: {
     custom: true,
     colon: true,
+    bare: true,
+    ordinal: true,
     bracket: true,
     chapter: true,
     section: true,
@@ -59,7 +64,7 @@ const API = {
   insert: "/api/block/insertBlock",
 };
 
-const VERSION = "0.4.0";
+const VERSION = "0.7.0"; // 与 plugin.json 保持一致
 
 /* 思源插件存储：saveData(name, data) / loadData(name)，name 必填 */
 const SETTINGS_FILE = "settings.json";
@@ -331,6 +336,156 @@ function countColonPattern(blocks, cfg) {
   return n;
 }
 
+/* --------- 无序号候选一：独立短段落（建立人体简单化的形象） --------- */
+
+// 以这些词开头的短段落通常是正文的转折句，不是标题
+const BARE_STOP =
+  /^(所以|但是|因此|然而|总之|综上所述|例如|比如|另外|此外|而且|并且|同时|可见|由此|不过|当然|其实|反正|就是说|也就是说|换言之|反之|至于|关于)/;
+// 以这些虚词收尾的，多半是半句话
+const BARE_TAIL = /[的了吗呢吧着过之]$/;
+
+/**
+ * 只看形状：这段文字像不像一个纯文字小标题。
+ * 真正的启用与否还要看整篇有多少条（见 countBare），零星一条不动。
+ *
+ * 这里挡的主要是「药材行 / 药量行」：阿胶、各一两、猪苓（去皮）茯苓　泽泻　滑石（碎）。
+ * 它们同样短、同样没有句号，靠括号、断行空格、字数和邻居位置（见 buildPlans）区分。
+ */
+function bareShape(t, cfg) {
+  const s = String(t || "").trim();
+  const max = Number(cfg && cfg.bareMax) || 20;
+  if (s.length < 4 || s.length > max) return false; // 2~3 字太像药名/标签，交给自定义关键词
+  if (/[。；]/.test(s)) return false; // 有句号/分号就是在叙述
+  if (/[，,：:、]/.test(s)) return false; // 逗号冒号顿号交给别的规则
+  if (/[！？!?]/.test(s) && !/[！？!?]$/.test(s)) return false; // 问号只能在结尾
+  if (/[！？!?]$/.test(s) && s.length > 14) return false;
+  if (BARE_STOP.test(s) || BARE_TAIL.test(s)) return false;
+  if (/^第/.test(s)) return false; // 第X章 / 第十条 交给条文规则
+  if (/[（）()【】\[\]{}<>《》*\\`#|]/.test(s)) return false; // 括号、加粗、转义、标记符
+  if (/[\s　]{2,}/.test(s)) return false; // 连续空白＝表格化的药材行/字段行
+  if (!/[\u4e00-\u9fa5]{2,}/.test(s)) return false; // 至少两个汉字
+  return true;
+}
+
+/** 这条短段落是不是夹在一堆短行中间（那就是列表，不是标题） */
+function shortLike(b, cfg) {
+  if (!b || normType(b.type) !== "NodeParagraph") return false;
+  const s = String(b.text || "").trim();
+  if (!s) return false;
+  const max = Number(cfg && cfg.bareMax) || 20;
+  return s.length <= max && !/[。]/.test(s);
+}
+
+/** 整篇里有多少条「形状像小标题的独立短段落」 */
+function countBare(blocks, cfg) {
+  let n = 0;
+  for (const b of blocks) {
+    if (normType(b.type) !== "NodeParagraph") continue;
+    const t = String(b.text || "").replace(/^[\s　]+/, "");
+    if (!t) continue;
+    if (detectMarker(t.slice(0, 48)) || detectCustom(t.slice(0, 48), cfg)) continue;
+    if (bareShape(t, cfg)) n++;
+  }
+  return n;
+}
+
+/* --------- 无序号候选二：「第一个：学习中医的发心」 --------- */
+
+/**
+ * 「第X(个/项/点/条)」+ 分隔符 + 其后一句。
+ * 只认带分隔符的写法；「第十条 本法…」这种空格连接且带「本」的不认。
+ */
+const ORDINAL_RE = /^第\s*([一二三四五六七八九十百零〇\d]{1,3})\s*(个|项|点|条)?\s*([、.．：:，,　 ])\s*/;
+const ORDINAL_STOP =
+  /^(我们|你们|他们|她们|它们|这|那|其|此|本|该|就|要|是|有|可|需|应|须|而|但|则)/;
+
+function ordinalHead(t, cfg) {
+  const s = String(t || "").replace(/^[\s　]+/, "");
+  const m = s.match(ORDINAL_RE);
+  if (!m) return null;
+
+  const unit = m[2] || "";
+  const sep = m[3];
+  // 「第一个/第一项」必须跟冒号或顿号才算标题；跟空格的多是「第十条 本法…」
+  if (unit && !/^[：:、.．]$/.test(sep)) return null;
+
+  const rest = s.slice(m[0].length);
+  if (!rest) return null;
+
+  const end = rest.search(/[。！？；]/);
+  const cand = (end >= 0 ? rest.slice(0, end) : rest).trim();
+  const body = (end >= 0 ? rest.slice(end + 1) : "").trim();
+
+  const max = Math.min(Number(cfg && cfg.maxTitleLen) || 24, 24);
+  if (cand.length < 2 || cand.length > max) return null;
+  if (/[，,：:；]/.test(cand)) return null; // 一句里还有逗号，说明是叙述
+  if (ORDINAL_STOP.test(cand)) return null;
+  return { num: m[1], unit, sep, cand, body };
+}
+
+/** 整篇里有多少条「第X，…」结构 */
+function countOrdinal(blocks, cfg) {
+  let n = 0;
+  for (const b of blocks) {
+    if (normType(b.type) !== "NodeParagraph") continue;
+    const t = String(b.text || "").replace(/^[\s　]+/, "");
+    if (!t) continue;
+    if (ordinalHead(t, cfg)) n++;
+  }
+  return n;
+}
+
+/** 下一个块是不是正文（用来判断「这条短段落后面有没有内容可带」） */
+function hasBodyAfter(next) {
+  if (!next) return false;
+  const ty = normType(next.type);
+  if (ty === "NodeList") return true;
+  if (ty !== "NodeParagraph") return false;
+  return String(next.text || "").trim().length >= 12;
+}
+
+/**
+ * 整段就是一个无序号标题时的计划：
+ * 先试「第X个：…」，再试独立短段落。
+ */
+function wholeHeadPlan(block, raw, t, ctx, cfg, next, prev) {
+  if (cfg.rules.ordinal && cfg.__ordinal) {
+    const o = ordinalHead(t, cfg);
+    if (o && (o.body || hasBodyAfter(next))) {
+      const joiner = /^[、.．]$/.test(o.sep) ? o.sep : "、";
+      const head = `第${o.num}${o.unit}${joiner}${o.cand}`;
+      const level = resolveLevel({ key: "ordinal", family: "plain", level: 0, num: null }, ctx, cfg);
+      const outputs = [{ kind: "h", text: head, level }];
+      if (o.body) outputs.push({ kind: "p", text: o.body.replace(/\n+/g, " ").trim() });
+      return {
+        blockId: block.id,
+        src: raw,
+        marks: block.marks,
+        outputs,
+        conf: o.cand.length <= 14 ? "high" : "mid",
+        via: "ordinal",
+      };
+    }
+  }
+
+  if (cfg.rules.bare && cfg.__bare && bareShape(t, cfg)) {
+    // 前后都是短行 → 多半是药材行、条目列表，不是标题
+    if (shortLike(prev, cfg) && shortLike(next, cfg)) return null;
+    const level = resolveLevel({ key: "bare", family: "plain", level: 0, num: null }, ctx, cfg);
+    const text = t.trim();
+    return {
+      blockId: block.id,
+      src: raw,
+      marks: block.marks,
+      outputs: [{ kind: "h", text, level }],
+      conf: text.length <= 12 && hasBodyAfter(next) ? "high" : "mid",
+      via: "bare",
+    };
+  }
+
+  return null;
+}
+
 /**
  * 在一段文字里找出所有"条目起点"。
  * 起点必须落在句末/全角空格/换行/冒号之后，且同族序号递增。
@@ -446,7 +601,8 @@ function resolveLevel(m, ctx, cfg) {
   let lv;
   let fixed = 0; // 用户显式指定的级别，不受「禁止跳级」压缩
 
-  if (m.key === "custom" || m.key === "colon") {
+  // 无序号标题（自定义关键词 / 冒号 / 独立短段 / 第X个）：没有固定级别，跟随上下文
+  if (m.key === "custom" || m.key === "colon" || m.key === "bare" || m.key === "ordinal") {
     fixed = m.key === "custom" ? m.level || Number(cfg.customLevel) || 0 : 0;
     if (fixed > 0) {
       lv = clamp(fixed, 1, 6);
@@ -536,7 +692,7 @@ function buildListPlan(block, ctx, cfg) {
   };
 }
 
-function buildPlan(block, ctx, cfg) {
+function buildPlan(block, ctx, cfg, next, prev) {
   const raw = String(block.text || "").replace(/\u200b/g, "");
   if (!raw.trim()) return null;
   const t = raw.replace(/^[\s　]+/, "");
@@ -547,7 +703,11 @@ function buildPlan(block, ctx, cfg) {
   // 不拆分：只处理"整段本来就像个标题"的块
   // 自定义关键词例外——它本身就是标题与正文的分界，不切就没有意义
   if (!cfg.splitParagraph && !(first && first.key === "custom")) {
-    if (!enabled) return null;
+    if (!enabled) {
+      // 关掉拆段时只接受「整段就是一个标题」的写法，不能切出正文
+      const whole = wholeHeadPlan(block, raw, t, ctx, cfg, next, prev);
+      return whole && whole.outputs.length === 1 ? whole : null;
+    }
     // 关掉拆段时，绝不能把"标题：正文"整段吞成一个标题，
     // 只接受短且没有分隔符的纯标题（如「1.口眼喎斜」）
     if (/[　\t：:]/.test(t)) return null;
@@ -565,6 +725,10 @@ function buildPlan(block, ctx, cfg) {
 
   const marks = scanMarkers(t, cfg);
   if (!marks.length) {
+    // 整段就是一个无序号标题：先认「第X个：…」，再认独立短段落
+    const whole = wholeHeadPlan(block, raw, t, ctx, cfg, next, prev);
+    if (whole) return whole;
+
     // 整篇都是「短词：正文」结构时，这一条也按小标题处理
     if (cfg.__colon) {
       const ch = colonHead(t);
@@ -645,12 +809,22 @@ function buildPlans(blocks, cfg, onlyIds) {
   const ctx = { prevLevel: 0, familyLevel: {} };
   const plans = [];
 
-  // 冒号短标题要整篇一起看：同一篇里够多才启用，零星「注意：…」不动
+  // 这几类都是「整篇一起看才敢用」的规则：篇内够多才启用，零星几条不动，
+  // 否则普通文章里的「注意：…」「好的」也会被当成标题。
   const colonN = cfg.rules.colon ? countColonPattern(blocks, cfg) : 0;
-  const need = Number(cfg.colonMin) || 5;
-  const c = colonN >= need ? Object.assign({}, cfg, { __colon: true, __colonN: colonN }) : cfg;
+  const bareN = cfg.rules.bare ? countBare(blocks, cfg) : 0;
+  const ordN = cfg.rules.ordinal ? countOrdinal(blocks, cfg) : 0;
+  const c = Object.assign({}, cfg, {
+    __colon: colonN >= (Number(cfg.colonMin) || 5),
+    __colonN: colonN,
+    __bare: bareN >= (Number(cfg.bareMin) || 2),
+    __bareN: bareN,
+    __ordinal: ordN >= (Number(cfg.ordinalMin) || 2),
+    __ordinalN: ordN,
+  });
 
-  for (const b of blocks) {
+  for (let i = 0; i < blocks.length; i++) {
+    const b = blocks[i];
     const type = normType(b.type);
     if (type === "NodeHeading") {
       ctx.prevLevel = b.level || 1;
@@ -658,7 +832,24 @@ function buildPlans(blocks, cfg, onlyIds) {
       continue;
     }
     if (type !== "NodeParagraph" && type !== "NodeList") continue;
-    const plan = type === "NodeList" ? buildListPlan(b, ctx, c) : buildPlan(b, ctx, c);
+
+    // 前后各找第一个非空块：后面用来判断有没有正文可带，前面用来识别列表式的短行
+    let next = null;
+    for (let j = i + 1; j < blocks.length; j++) {
+      const nb = blocks[j];
+      if (normType(nb.type) === "NodeParagraph" && !String(nb.text || "").trim()) continue;
+      next = nb;
+      break;
+    }
+    let prev = null;
+    for (let j = i - 1; j >= 0; j--) {
+      const pb = blocks[j];
+      if (normType(pb.type) === "NodeParagraph" && !String(pb.text || "").trim()) continue;
+      prev = pb;
+      break;
+    }
+
+    const plan = type === "NodeList" ? buildListPlan(b, ctx, c) : buildPlan(b, ctx, c, next, prev);
     if (!plan) continue;
     if (onlyIds && !onlyIds.has(plan.blockId)) continue;
     plans.push(plan);
@@ -1018,7 +1209,7 @@ function renderRow(plan, idx, checked) {
     .filter((o) => String(o.text || "").trim())
     .map((o) =>
       o.kind === "h"
-        ? `<span class="hm-chip hm-chip--h" data-chip="h"><span class="hm-lvnum">H${o.level}</span> ${escHtml(truncate(o.text, 40))}</span>`
+        ? `<span class="hm-chip hm-chip--h" data-chip="h" data-lv="${clamp(o.level, 1, 6)}"><span class="hm-lvnum">H${o.level}</span> ${escHtml(truncate(o.text, 40))}</span>`
         : `<span class="hm-chip hm-chip--p">正文 ${escHtml(truncate(o.text, 22))}</span>`
     )
     .join("");
@@ -1050,6 +1241,7 @@ function cfgInnerHtml() {
     <label class="hm-cfg__row">自动拆分段落 <input type="checkbox" data-cfg="splitParagraph"></label>
     <label class="hm-cfg__row">禁止跳级 <input type="checkbox" data-cfg="noSkip"></label>
     <label class="hm-cfg__row">标题最长字数 <input class="b3-text-field" type="number" min="8" max="60" step="1" data-cfg="maxTitleLen"></label>
+    <label class="hm-cfg__row">短段落判定字数 <input class="b3-text-field" type="number" min="4" max="40" step="1" data-cfg="bareMax"></label>
     <label class="hm-cfg__row">转换前存快照 <input type="checkbox" data-cfg="snapshot"></label>
     <div class="hm-cfg__custom">
       <div class="hm-cfg__ctitle">
@@ -1074,6 +1266,8 @@ function cfgInnerHtml() {
       </div>
     </div>
     <div class="hm-cfg__rules">
+      <label><input type="checkbox" data-rule="bare">短段落</label>
+      <label><input type="checkbox" data-rule="ordinal">第X个/第X，</label>
       <label><input type="checkbox" data-rule="bracket">【标签】</label>
       <label><input type="checkbox" data-rule="colon">冒号标题</label>
       <label><input type="checkbox" data-rule="chapter">第X章/编</label>
@@ -1098,7 +1292,7 @@ function statHtml(plans) {
 
 function listHtml(plans) {
   if (!plans.length) {
-    return '<div class="hm-empty">这篇文档里没找到可转换的段落。<br>可在「规则」里放宽条件，或检查段落是否以「一、」「1.」这类序号开头。<br>纯文字小标题（如「功效　发汗解表」）请在「自定义关键词」里填写。</div>';
+    return '<div class="hm-empty">这篇文档里没找到可转换的段落。<br>可在「规则」里放宽条件，或检查段落是否以「一、」「1.」这类序号开头。<br>独立成段的短标题（20 字以内、无句号）和「第一个：…」会自动识别；<br>2~3 字的纯文字标签（如「功效」）请在「自定义关键词」里填写。</div>';
   }
   return plans.map((p, i) => renderRow(p, i, p.conf !== "low")).join("");
 }
@@ -1108,8 +1302,11 @@ function listHtml(plans) {
 function levelRowHtml(h, idx) {
   const pad = (clamp(h.level, 1, 6) - 1) * 14 + 6;
   const opts = LEVELS.map((n) => `<option value="${n}"${n === h.to ? " selected" : ""}>H${n}</option>`).join("");
-  return `<div class="hm-hrow${h.to !== h.level ? " hm-hrow--chg" : ""}" data-idx="${idx}" style="padding-left:${pad}px">
-    <span class="hm-hcur">H${h.level}</span>
+  // 颜色按「改完之后」的层级上色（h.to），徽标文字写清 原级→新级，避免色与字打架
+  const lv = clamp(h.to, 1, 6);
+  const badge = h.to === h.level ? `H${h.level}` : `H${h.level}→${h.to}`;
+  return `<div class="hm-hrow${h.to !== h.level ? " hm-hrow--chg" : ""}" data-idx="${idx}" data-lv="${lv}" style="padding-left:${pad}px">
+    <span class="hm-hcur" title="当前 H${h.level}${h.to === h.level ? "" : ` → 目标 H${h.to}`}">${badge}</span>
     <span class="hm-htxt" title="${escHtml(h.text)}">${escHtml(truncate(h.text, 90))}</span>
     <select class="b3-select hm-hsel" data-idx="${idx}">${opts}</select>
   </div>`;
@@ -1285,7 +1482,7 @@ class HeadingMaster extends Plugin {
     if (!withText) msg += "。读不到文字";
     else if (!para) msg += "。没有段落块";
     else if (firstPara) msg += `。首段：「${String(firstPara.text).trim().slice(0, 28)}」`;
-    msg += "。若小标题是纯文字（如「功效」），在「规则 → 自定义关键词」里补充";
+    msg += "。短标题（20 字内、无句号）与「第一个：…」已自动识别；仍漏掉的 2~3 字标签请写入「规则 → 自定义关键词」";
     this.toast(msg, 12000);
   }
 
@@ -1986,6 +2183,11 @@ module.exports.__engine = {
   firstMarker,
   scanMarkers,
   splitHeadBody,
+  bareShape,
+  countBare,
+  ordinalHead,
+  countOrdinal,
+  wholeHeadPlan,
   resolveLevel,
   buildPlan,
   buildPlans,

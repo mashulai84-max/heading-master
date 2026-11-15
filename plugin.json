@@ -2,7 +2,7 @@
   "name": "heading-master",
   "author": "马书来",
   "url": "https://github.com/mashulai84-max/heading-master",
-  "version": "0.4.0",
+  "version": "0.7.0",
   "minAppVersion": "3.8.4",
   "backends": [
     "all"

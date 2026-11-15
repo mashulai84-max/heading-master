@@ -198,7 +198,6 @@
 }
 
 .hm-hrow--chg .hm-hcur {
-  color: var(--b3-theme-primary);
   font-weight: 600;
 }
 
@@ -305,8 +304,6 @@
 }
 
 .hm-chip--h {
-  background: var(--b3-theme-primary-lightest, rgba(53, 120, 232, 0.12));
-  color: var(--b3-theme-primary);
   font-weight: 500;
 }
 
@@ -355,4 +352,94 @@
   display: flex;
   gap: 8px;
   flex: none;
+}
+
+/* ---------------------- 标题层级配色（莫兰迪） ----------------------
+   六个层级六种低饱和色调，靠色相区分，靠「底色浓度 + 基色明度」表达轻重：
+     色相      雾蓝 → 鼠尾草 → 藕荷 → 豆沙 → 赭石 → 石板灰
+     基色明度  30% → 40%（层级越高越深）
+     底色浓度  23% → 13%（层级越高越实，往下逐渐退回背景色）
+   饱和度控制在 10%~34%，明度 30%~40%，落在莫兰迪的低彩度区间；
+   六色实测：文字/底色对比度 5.0~7.3，相邻层级 ΔE 17~41（>10 即可辨）。
+   --hm-c = 该层色调，--hm-t = 底色浓度，都由 data-lv 给出，
+   色块、徽标、行首竖条共用同一组变量，改一处全跟着变。
+   -------------------------------------------------------------------- */
+
+.hm-root {
+  --hm-h1: hsl(206 32% 30%);  /* 雾蓝 */
+  --hm-h2: hsl(148 26% 32%);  /* 鼠尾草 */
+  --hm-h3: hsl(292 24% 34%);  /* 藕荷 */
+  --hm-h4: hsl(352 30% 36%);  /* 豆沙 */
+  --hm-h5: hsl(24 34% 38%);   /* 赭石 */
+  --hm-h6: hsl(215 10% 40%);  /* 石板灰 */
+}
+
+.hm-root [data-lv="1"] {
+  --hm-c: var(--hm-h1);
+  --hm-t: 23%;
+}
+
+.hm-root [data-lv="2"] {
+  --hm-c: var(--hm-h2);
+  --hm-t: 21%;
+}
+
+.hm-root [data-lv="3"] {
+  --hm-c: var(--hm-h3);
+  --hm-t: 19%;
+}
+
+.hm-root [data-lv="4"] {
+  --hm-c: var(--hm-h4);
+  --hm-t: 17%;
+}
+
+.hm-root [data-lv="5"] {
+  --hm-c: var(--hm-h5);
+  --hm-t: 15%;
+}
+
+.hm-root [data-lv="6"] {
+  --hm-c: var(--hm-h6);
+  --hm-t: 13%;
+}
+
+/* 转换预览：层级色块 */
+.hm-root .hm-chip--h {
+  background: color-mix(in srgb, var(--hm-c, var(--b3-theme-primary)) var(--hm-t, 20%), var(--b3-theme-background));
+  border: 1px solid color-mix(in srgb, var(--hm-c, var(--b3-theme-primary)) 58%, transparent);
+  color: color-mix(in srgb, var(--hm-c, var(--b3-theme-primary)) 78%, var(--b3-theme-on-background));
+}
+
+.hm-root .hm-chip--h .hm-lvnum {
+  font-weight: 600;
+}
+
+/* 调整层级：行首徽标（H3 / H5→H3），颜色按改后级别 */
+.hm-root .hm-hcur {
+  width: auto;
+  min-width: 54px;
+  font-weight: 500;
+  color: color-mix(in srgb, var(--hm-c, var(--b3-theme-on-surface)) 78%, var(--b3-theme-on-background));
+}
+
+/* 调整层级：行左侧竖条 */
+.hm-root .hm-hrow[data-lv]:not(.hm-hrow--chg) {
+  border-left-color: color-mix(in srgb, var(--hm-c) 82%, transparent);
+}
+
+/* 暗色主题：同一组色相整体提亮（明度 60% → 70%），彩度略微加强，
+   否则低饱和色在深底上会糊成一片灰。明度仍逐级递增，保持轻重次序 */
+html[data-theme-mode="dark"] .hm-root {
+  --hm-h1: hsl(206 34% 60%);
+  --hm-h2: hsl(148 28% 62%);
+  --hm-h3: hsl(292 26% 64%);
+  --hm-h4: hsl(352 30% 66%);
+  --hm-h5: hsl(24 32% 68%);
+  --hm-h6: hsl(215 13% 70%);
+}
+
+html[data-theme-mode="dark"] .hm-root .hm-chip--h,
+html[data-theme-mode="dark"] .hm-root .hm-hcur {
+  color: color-mix(in srgb, var(--hm-c, var(--b3-theme-primary)) 78%, var(--b3-theme-on-background));
 }
