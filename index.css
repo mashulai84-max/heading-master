@@ -166,6 +166,66 @@
   line-height: 1.9;
 }
 
+/* 未识别到可转换段落时的说明面板 */
+.hm-notice {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  padding: 16px 6px 6px;
+}
+
+.hm-notice__hd {
+  font-size: 15px;
+  font-weight: 600;
+  margin-bottom: 10px;
+}
+
+.hm-notice__ul {
+  margin: 0 0 14px;
+  padding-left: 20px;
+  line-height: 2;
+  color: var(--b3-theme-on-surface);
+}
+
+.hm-notice__ul b {
+  color: var(--b3-theme-on-background);
+  font-weight: 600;
+}
+
+.hm-notice__sub {
+  font-size: 12px;
+  color: var(--b3-theme-on-surface);
+  margin-bottom: 6px;
+}
+
+.hm-notice__samples {
+  border: 1px solid var(--b3-border-color);
+  border-radius: var(--b3-border-radius);
+  background: var(--b3-theme-surface);
+  padding: 6px 10px;
+  margin-bottom: 14px;
+}
+
+.hm-notice__tip {
+  padding: 10px 12px;
+  border-radius: var(--b3-border-radius);
+  background: var(--b3-theme-primary-lightest, rgba(53, 120, 232, 0.08));
+  border-left: 3px solid var(--b3-theme-primary);
+  line-height: 1.7;
+}
+
+/* 层级面板顶部的说明条 */
+.hm-hintbar {
+  padding: 8px 12px;
+  margin: 0 0 6px;
+  border-radius: var(--b3-border-radius);
+  background: var(--b3-theme-primary-lightest, rgba(53, 120, 232, 0.08));
+  border-left: 3px solid var(--b3-theme-primary);
+  color: var(--b3-theme-on-surface);
+  font-size: 12px;
+  line-height: 1.6;
+}
+
 /* 调整标题层级 */
 .hm-outline {
   padding: 4px 2px;
@@ -187,6 +247,7 @@
 .hm-hrow--chg {
   border-left-color: var(--b3-theme-primary);
   background: var(--b3-theme-primary-lightest, rgba(53, 120, 232, 0.08));
+  transition: border-color 0.12s ease, background-color 0.12s ease;
 }
 
 .hm-hcur {
@@ -366,12 +427,12 @@
    -------------------------------------------------------------------- */
 
 .hm-root {
-  --hm-h1: hsl(206 32% 30%);  /* 雾蓝 */
-  --hm-h2: hsl(148 26% 32%);  /* 鼠尾草 */
-  --hm-h3: hsl(292 24% 34%);  /* 藕荷 */
-  --hm-h4: hsl(352 30% 36%);  /* 豆沙 */
-  --hm-h5: hsl(24 34% 38%);   /* 赭石 */
-  --hm-h6: hsl(215 10% 40%);  /* 石板灰 */
+  --hm-h1: hsl(206 58% 42%);  /* 雾蓝 */
+  --hm-h2: hsl(148 44% 36%);  /* 鼠尾草 */
+  --hm-h3: hsl(292 40% 45%);  /* 藕荷 */
+  --hm-h4: hsl(352 56% 48%);  /* 豆沙 */
+  --hm-h5: hsl(24 64% 44%);   /* 赭石 */
+  --hm-h6: hsl(215 12% 47%);  /* 石板灰 */
 }
 
 .hm-root [data-lv="1"] {
@@ -404,15 +465,24 @@
   --hm-t: 13%;
 }
 
-/* 转换预览：层级色块 */
+/* 转换预览：层级色块
+   色相靠 H 徽标的实色底来体现——原先只靠 20% 淡染，六个级别看不出区别 */
 .hm-root .hm-chip--h {
-  background: color-mix(in srgb, var(--hm-c, var(--b3-theme-primary)) var(--hm-t, 20%), var(--b3-theme-background));
-  border: 1px solid color-mix(in srgb, var(--hm-c, var(--b3-theme-primary)) 58%, transparent);
-  color: color-mix(in srgb, var(--hm-c, var(--b3-theme-primary)) 78%, var(--b3-theme-on-background));
+  background: color-mix(in srgb, var(--hm-c, var(--b3-theme-primary)) 20%, var(--b3-theme-background));
+  border: 1px solid color-mix(in srgb, var(--hm-c, var(--b3-theme-primary)) 52%, transparent);
+  color: color-mix(in srgb, var(--hm-c, var(--b3-theme-primary)) 85%, var(--b3-theme-on-background));
+  padding-left: 3px;
 }
 
 .hm-root .hm-chip--h .hm-lvnum {
+  display: inline-block;
+  padding: 0 5px;
+  margin-right: 5px;
+  border-radius: 3px;
+  background: var(--hm-c, var(--b3-theme-primary));
+  color: var(--b3-theme-background);
   font-weight: 600;
+  line-height: 1.5;
 }
 
 /* 调整层级：行首徽标（H3 / H5→H3），颜色按改后级别 */
@@ -423,20 +493,30 @@
   color: color-mix(in srgb, var(--hm-c, var(--b3-theme-on-surface)) 78%, var(--b3-theme-on-background));
 }
 
-/* 调整层级：行左侧竖条 */
-.hm-root .hm-hrow[data-lv]:not(.hm-hrow--chg) {
-  border-left-color: color-mix(in srgb, var(--hm-c) 82%, transparent);
+/* 调整层级：行左侧竖条（未改动为淡色，改动后换成新级别的实色） */
+.hm-root .hm-hrow[data-lv] {
+  border-left-color: color-mix(in srgb, var(--hm-c) 32%, transparent);
+  transition: border-color 0.12s ease, background-color 0.12s ease, padding-left 0.12s ease;
+}
+
+.hm-root .hm-hrow--chg {
+  border-left-color: color-mix(in srgb, var(--hm-c) 78%, var(--b3-theme-on-background));
+  background: color-mix(in srgb, var(--hm-c) 12%, transparent);
+}
+
+.hm-root .hm-hrow--chg .hm-hcur {
+  color: color-mix(in srgb, var(--hm-c) 78%, var(--b3-theme-on-background));
 }
 
 /* 暗色主题：同一组色相整体提亮（明度 60% → 70%），彩度略微加强，
    否则低饱和色在深底上会糊成一片灰。明度仍逐级递增，保持轻重次序 */
 html[data-theme-mode="dark"] .hm-root {
-  --hm-h1: hsl(206 34% 60%);
-  --hm-h2: hsl(148 28% 62%);
-  --hm-h3: hsl(292 26% 64%);
-  --hm-h4: hsl(352 30% 66%);
-  --hm-h5: hsl(24 32% 68%);
-  --hm-h6: hsl(215 13% 70%);
+  --hm-h1: hsl(206 52% 62%);
+  --hm-h2: hsl(148 38% 58%);
+  --hm-h3: hsl(292 38% 68%);
+  --hm-h4: hsl(352 50% 70%);
+  --hm-h5: hsl(24 56% 66%);
+  --hm-h6: hsl(215 10% 68%);
 }
 
 html[data-theme-mode="dark"] .hm-root .hm-chip--h,

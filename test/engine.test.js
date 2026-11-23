@@ -451,5 +451,104 @@ eq("全部 H2", rd.map((p) => p.outputs[0].level).join(","), "2,2,2,2,2");
 eq("导语段没被误判", rd.some((p) => p.src.indexOf("我认为有两个") >= 0), false);
 
 
+console.log("\n[26] 层级面板：改级别后视觉同步");
+{
+  const r1 = E.levelRowHtml({ id: "a", text: "一、总则", level: 3, to: 3 }, 0);
+  truthy("未改动 data-lv=3", r1.indexOf('data-lv="3"') >= 0);
+  truthy("未改动徽标 H3", r1.indexOf(">H3</span>") >= 0);
+  truthy("未改动无 chg 类", r1.indexOf("hm-hrow--chg") < 0);
+
+  const r2 = E.levelRowHtml({ id: "a", text: "一、总则", level: 3, to: 5 }, 0);
+  truthy("改到 H5 后 data-lv=5（配色跟随）", r2.indexOf('data-lv="5"') >= 0);
+  truthy("徽标写清 H3→H5", r2.indexOf("H3→H5") >= 0);
+  truthy("带 hm-hrow--chg", r2.indexOf("hm-hrow--chg") >= 0);
+  // 缩进也按目标级别：(5-1)*14+6 = 62
+  truthy("缩进按目标级别", r2.indexOf("padding-left:62px") >= 0);
+  eq("改回原级则无 chg", E.levelRowHtml({ id: "a", text: "x", level: 5, to: 5 }, 0).indexOf("hm-hrow--chg") < 0, true);
+}
+
+console.log("\n[27] 未识别面板：有标题时给出调层级入口");
+{
+  const withHeads = E.noPlanHtml({
+    total: 12,
+    paraCount: 10,
+    heads: [{ id: "h1", level: 2 }, { id: "h2", level: 2 }],
+    samples: ["这是一段普通正文。"],
+    src: "kramdown",
+  });
+  truthy("列出标题数量", withHeads.indexOf("已有 <b>2</b> 个标题") >= 0);
+  truthy("有「调整已有标题层级」按钮", withHeads.indexOf('data-act="levels"') >= 0);
+  truthy("按钮文案带数量", withHeads.indexOf("调整已有标题层级（2）") >= 0);
+  truthy("有「改完规则重新识别」", withHeads.indexOf('data-act="rescan"') >= 0);
+  truthy("显示段落样例", withHeads.indexOf("这是一段普通正文。") >= 0);
+  truthy("展示读取路径", withHeads.indexOf("kramdown") >= 0);
+
+  const noHeads = E.noPlanHtml({ total: 3, paraCount: 3, heads: [], samples: [], src: "dom" });
+  truthy("无标题时不显示 levels 按钮", noHeads.indexOf('data-act="levels"') < 0);
+  truthy("无标题时仍可改规则", noHeads.indexOf('data-act="cfg"') >= 0);
+}
+
+console.log("\n[28] 改级别时色块真的换色（转换预览）");
+{
+  const mkChip = (lv) => {
+    const attrs = {};
+    const num = { textContent: "H" + lv };
+    return {
+      attrs,
+      num,
+      setAttribute: (k, v) => (attrs[k] = v),
+      querySelector: (sel) => (sel === ".hm-lvnum" ? num : null),
+    };
+  };
+  const chip = mkChip(3);
+  const body = { setAttribute() {}, querySelector: () => null };
+  const row = { querySelectorAll: () => [chip, body] };
+  E.paintChips(row, 5);
+  eq("色块 data-lv 跟随到 5", chip.attrs["data-lv"], "5");
+  eq("色块文字跟随到 H5", chip.num.textContent, "H5");
+  E.paintChips(row, 1);
+  eq("再改回 H1", [chip.attrs["data-lv"], chip.num.textContent], ["1", "H1"]);
+
+  // renderRow 初始就带 data-lv，保证首屏配色正确
+  const plan = { blockId: "b1", src: "一、总则　正文", marks: false, conf: "high", via: "cnNum", outputs: [{ kind: "h", level: 2, text: "一、总则" }, { kind: "p", text: "正文" }] };
+  const html = E.renderRow(plan, 0, true);
+  truthy("首屏色块带 data-lv=2", html.indexOf('data-chip="h" data-lv="2"') >= 0);
+}
+
+console.log("\n[29] 改级别时整行换色/缩进/徽标（层级面板）");
+{
+  const mkRow = () => {
+    const cls = new Set();
+    const attrs = {};
+    const style = {};
+    const badge = { textContent: "", title: "" };
+    return {
+      cls,
+      attrs,
+      style,
+      badge,
+      classList: {
+        toggle: (n, on) => (on ? cls.add(n) : cls.delete(n)),
+        contains: (n) => cls.has(n),
+      },
+      setAttribute: (k, v) => (attrs[k] = v),
+      querySelector: (sel) => (sel === ".hm-hcur" ? badge : null),
+    };
+  };
+
+  const row = mkRow();
+  E.paintLevelRow(row, { level: 3, to: 5 });
+  eq("行 data-lv=5", row.attrs["data-lv"], "5");
+  eq("缩进 62px", row.style.paddingLeft, "62px");
+  eq("徽标 H3→H5", row.badge.textContent, "H3→H5");
+  truthy("带已改动标记", row.cls.has("hm-hrow--chg"));
+
+  E.paintLevelRow(row, { level: 3, to: 3 });
+  eq("改回原级 data-lv=3", row.attrs["data-lv"], "3");
+  eq("改回原级缩进 34px", row.style.paddingLeft, "34px");
+  eq("徽标回到 H3", row.badge.textContent, "H3");
+  eq("已改动标记移除", row.cls.has("hm-hrow--chg"), false);
+}
+
 console.log(`\n===== ${pass} passed, ${fail} failed =====`);
 process.exit(fail ? 1 : 0);

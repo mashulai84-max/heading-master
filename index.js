@@ -64,7 +64,7 @@ const API = {
   insert: "/api/block/insertBlock",
 };
 
-const VERSION = "0.7.0"; // 与 plugin.json 保持一致
+const VERSION = "0.7.2"; // 与 plugin.json 保持一致
 
 /* 思源插件存储：saveData(name, data) / loadData(name)，name 必填 */
 const SETTINGS_FILE = "settings.json";
@@ -1300,19 +1300,21 @@ function listHtml(plans) {
 /* ---------- 调整标题层级面板 ---------- */
 
 function levelRowHtml(h, idx) {
-  const pad = (clamp(h.level, 1, 6) - 1) * 14 + 6;
-  const opts = LEVELS.map((n) => `<option value="${n}"${n === h.to ? " selected" : ""}>H${n}</option>`).join("");
-  // 颜色按「改完之后」的层级上色（h.to），徽标文字写清 原级→新级，避免色与字打架
+  // 缩进与配色都按「改完之后」的层级来，改级别时视觉立刻跟着动
   const lv = clamp(h.to, 1, 6);
-  const badge = h.to === h.level ? `H${h.level}` : `H${h.level}→${h.to}`;
-  return `<div class="hm-hrow${h.to !== h.level ? " hm-hrow--chg" : ""}" data-idx="${idx}" data-lv="${lv}" style="padding-left:${pad}px">
-    <span class="hm-hcur" title="当前 H${h.level}${h.to === h.level ? "" : ` → 目标 H${h.to}`}">${badge}</span>
+  const pad = (lv - 1) * 14 + 6;
+  const opts = LEVELS.map((n) => `<option value="${n}"${n === h.to ? " selected" : ""}>H${n}</option>`).join("");
+  const changed = h.to !== h.level;
+  const badge = changed ? `H${h.level}→H${h.to}` : `H${h.level}`;
+  const tip = changed ? `当前 H${h.level}，将改为 H${h.to}` : `当前 H${h.level}`;
+  return `<div class="hm-hrow${changed ? " hm-hrow--chg" : ""}" data-idx="${idx}" data-lv="${lv}" style="padding-left:${pad}px">
+    <span class="hm-hcur" title="${tip}">${badge}</span>
     <span class="hm-htxt" title="${escHtml(h.text)}">${escHtml(truncate(h.text, 90))}</span>
     <select class="b3-select hm-hsel" data-idx="${idx}">${opts}</select>
   </div>`;
 }
 
-function levelDialogHtml(list) {
+function levelDialogHtml(list, hint) {
   const rows = list.map((h, i) => levelRowHtml(h, i)).join("");
   return `<div class="hm-root">
   <div class="hm-bar">
@@ -1324,12 +1326,82 @@ function levelDialogHtml(list) {
       <button class="b3-button b3-button--outline b3-button--small" data-act="reset">恢复</button>
     </div>
   </div>
+  ${hint ? `<div class="hm-hintbar">${escHtml(hint)}</div>` : ""}
   <div class="hm-list hm-outline">${rows || '<div class="hm-empty">这篇文档里没有标题块。</div>'}</div>
   <div class="hm-foot">
     <div class="hm-progress"></div>
     <div class="hm-foot__btns">
       <button class="b3-button b3-button--cancel" data-act="cancel">取消</button>
       <button class="b3-button b3-button--text" data-act="apply">应用</button>
+    </div>
+  </div>
+</div>`;
+}
+
+/** 转换预览：把一行里所有「标题色块」刷成指定级别
+ *  色块的底色/边框/文字色全部由 data-lv 驱动，只改数字不改 data-lv 就会「数字变了颜色不变」 */
+function paintChips(row, lv) {
+  if (!row || !row.querySelectorAll) return;
+  const v = clamp(lv, 1, 6);
+  row.querySelectorAll('[data-chip="h"]').forEach((chip) => {
+    chip.setAttribute("data-lv", String(v));
+    const num = chip.querySelector && chip.querySelector(".hm-lvnum");
+    if (num) num.textContent = "H" + v;
+  });
+}
+
+/** 调整层级：只重画一行——级别色、缩进、徽标全部跟着「目标级别」走 */
+function paintLevelRow(row, s) {
+  if (!row || !s) return;
+  const lv = clamp(s.to, 1, 6);
+  const changed = s.to !== s.level;
+  if (row.classList) row.classList.toggle("hm-hrow--chg", changed);
+  row.setAttribute("data-lv", String(lv));
+  if (row.style) row.style.paddingLeft = (lv - 1) * 14 + 6 + "px";
+  const badge = row.querySelector && row.querySelector(".hm-hcur");
+  if (badge) {
+    badge.textContent = changed ? `H${s.level}→H${s.to}` : `H${s.level}`;
+    badge.title = changed ? `当前 H${s.level}，将改为 H${s.to}` : `当前 H${s.level}`;
+  }
+}
+
+/** 一个都没识别到时：不开红字提示，而是给一个能继续操作的面板（可直接去调层级） */
+function noPlanHtml({ total, paraCount, heads, samples, src }) {
+  const items = [
+    "段落要以序号开头：<b>一、</b>　<b>1.</b>　<b>（一）</b>　<b>第X章</b>　<b>【标签】</b>",
+    "「功效」「应用」这类 2~3 字纯文字标签，要先写进「规则 → 自定义关键词」",
+    "列表块（带圆点/编号）会逐个条目识别；图片、代码块、表格、引用块不处理",
+    "已经是标题的块不会重复转换，可直接「调整已有标题层级」",
+  ];
+  return `<div class="hm-root">
+  <div class="hm-bar">
+    <div class="hm-stat">未识别到可转换段落　·　共 <b>${total}</b> 块（段落 <b>${paraCount}</b>　标题 <b>${heads.length}</b>）</div>
+    <div class="hm-tools">
+      <button class="b3-button b3-button--outline b3-button--small" data-act="cfg">规则</button>
+    </div>
+  </div>
+  <div class="hm-cfg hm-hidden">${cfgInnerHtml()}</div>
+  <div class="hm-notice">
+    <div class="hm-notice__hd">这篇文档里没有找到可转换的段落</div>
+    <ul class="hm-notice__ul">${items.map((t) => `<li>${t}</li>`).join("")}</ul>
+    ${
+      samples.length
+        ? `<div class="hm-notice__sub">文中段落的前几行：</div>
+    <div class="hm-notice__samples">${samples.map((s) => `<div class="hm-miss__row">${escHtml(truncate(s, 80))}</div>`).join("")}</div>`
+        : ""
+    }
+    ${
+      heads.length
+        ? `<div class="hm-notice__tip">本文已有 <b>${heads.length}</b> 个标题，可以跳过转换，直接调整它们的层级。</div>`
+        : `<div class="hm-notice__tip">这篇文档里还没有任何标题块。先按上面的规则整理段落，或把要识别的词写进自定义关键词。</div>`
+    }
+  </div>
+  <div class="hm-foot">
+    <div class="hm-progress">读取路径：${escHtml(src || "未知")}</div>
+    <div class="hm-foot__btns">
+      ${heads.length ? `<button class="b3-button b3-button--text" data-act="levels">调整已有标题层级（${heads.length}）</button>` : ""}
+      <button class="b3-button b3-button--outline" data-act="rescan">改完规则重新识别</button>
+      <button class="b3-button b3-button--cancel" data-act="cancel">关闭</button>
     </div>
   </div>
 </div>`;
@@ -1448,42 +1520,95 @@ class HeadingMaster extends Plugin {
     }
   }
 
-  /** 一个都没识别到时，把扫描情况摊开，方便定位是"没文字"还是"类型不对" */
-  reportEmpty(all, onlyIds, extra) {
-    const meta = extra || {};
-    const stat = {};
-    let withText = 0;
-    let para = 0;
-    let firstPara = null;
-    for (const b of all) {
-      const k = b.type || "(空类型)";
-      stat[k] = (stat[k] || 0) + 1;
-      const has = !!String(b.text || "").trim();
-      if (has) withText++;
-      if (b.type === "NodeParagraph") {
-        para++;
-        if (has && !firstPara) firstPara = b;
-      }
-    }
-    const detail = Object.keys(stat).map((k) => k + "×" + stat[k]).join(" ");
-    console.info("[heading-master] 扫描结果", {
+  /** 一个都没识别到时：开说明面板，而不是甩一条红字提示；有标题的文档可直接转去调层级 */
+  showNoPlanPanel({ all, cfg, scope, scopeEls, onlyIds, src, info }) {
+    const heads = headingList(all);
+    const paras = all.filter((b) => normType(b.type) === "NodeParagraph");
+    const samples = paras
+      .map((b) => String(b.text || "").trim())
+      .filter(Boolean)
+      .slice(0, 3);
+
+    console.info("[heading-master] 未识别到可转换段落", {
       ver: VERSION,
-      source: meta.src,
-      editor: meta.info,
+      source: src,
+      editor: info,
       total: all.length,
-      withText,
-      para,
-      detail,
+      para: paras.length,
+      headings: heads.length,
       onlyIds: onlyIds ? onlyIds.size : "全篇",
     });
-    console.info("[heading-master] 前 8 块", all.slice(0, 8).map((b) => ({ type: b.type, id: b.id, text: String(b.text || "").slice(0, 40) })));
 
-    let msg = `[v${VERSION}/${meta.src || "?"}] 共 ${all.length} 块（${detail}），有文字 ${withText}，段落 ${para}`;
-    if (!withText) msg += "。读不到文字";
-    else if (!para) msg += "。没有段落块";
-    else if (firstPara) msg += `。首段：「${String(firstPara.text).trim().slice(0, 28)}」`;
-    msg += "。短标题（20 字内、无句号）与「第一个：…」已自动识别；仍漏掉的 2~3 字标签请写入「规则 → 自定义关键词」";
-    this.toast(msg, 12000);
+    const ui = showDialog({
+      title: this.t("dialogTitle", "智能标题转换"),
+      width: "720px",
+      height: "540px",
+      content: noPlanHtml({ total: all.length, paraCount: paras.length, heads, samples, src }),
+    });
+    const root = ui.el;
+    if (!root) {
+      this.toast("界面初始化失败");
+      return;
+    }
+
+    // 配置回填 + 即时保存（与设置面板同一份 settings）
+    root.querySelectorAll("[data-cfg]").forEach((el) => {
+      const k = el.getAttribute("data-cfg");
+      if (el.type === "checkbox") el.checked = !!cfg[k];
+      else el.value = cfg[k];
+    });
+    root.querySelectorAll("[data-rule]").forEach((el) => {
+      el.checked = !!cfg.rules[el.getAttribute("data-rule")];
+    });
+
+    root.addEventListener("input", (ev) => {
+      const t = ev.target;
+      if (!t || !t.hasAttribute) return;
+      if (t.getAttribute("data-cfg") === "customKeywords") {
+        cfg.customKeywords = t.value;
+        this.saveSettings();
+      }
+    });
+
+    root.addEventListener("change", (ev) => {
+      const t = ev.target;
+      if (!t || !t.hasAttribute) return;
+      if (t.hasAttribute("data-cfg")) {
+        const k = t.getAttribute("data-cfg");
+        cfg[k] = t.type === "checkbox" ? t.checked : t.type === "number" ? Number(t.value) : t.value;
+        this.saveSettings();
+        return;
+      }
+      if (t.hasAttribute("data-rule")) {
+        cfg.rules[t.getAttribute("data-rule")] = t.checked;
+        this.saveSettings();
+      }
+    });
+
+    root.addEventListener("click", (ev) => {
+      const btn = ev.target.closest("[data-act]");
+      if (!btn) return;
+      const act = btn.getAttribute("data-act");
+      if (act === "cfg") {
+        const panel = root.querySelector(".hm-cfg");
+        if (panel) panel.classList.toggle("hm-hidden");
+        return;
+      }
+      if (act === "levels") {
+        ui.destroy();
+        this.openLevelPanel("doc", null, {
+          blocks: all,
+          hint: `没有识别到可转换的段落，下面是本文已有的 ${heads.length} 个标题——可直接调整层级。`,
+        });
+        return;
+      }
+      if (act === "rescan") {
+        ui.destroy();
+        this.openPanel(scope, scopeEls);
+        return;
+      }
+      if (act === "cancel") ui.destroy();
+    });
   }
 
   /** 一次请求拿整篇 kramdown，自己切块——不依赖 DOM 结构，也不依赖 SQL 索引 */
@@ -1549,7 +1674,7 @@ class HeadingMaster extends Plugin {
       content: `<div class="hm-root">
         <div class="hm-cfg hm-cfg--scroll">${cfgInnerHtml()}</div>
         <div class="hm-foot" style="margin-top:auto">
-          <div class="hm-progress">改动即时保存</div>
+          <div class="hm-progress">改动即时保存 · v${VERSION}</div>
           <div class="hm-foot__btns">
             <button class="b3-button b3-button--text" data-act="convert">打开转换面板</button>
             <button class="b3-button b3-button--outline" data-act="levels">调整标题层级</button>
@@ -1640,6 +1765,15 @@ class HeadingMaster extends Plugin {
   /* ---------------- 打开面板 ---------------- */
 
   async openPanel(scope, elements) {
+    try {
+      await this.openPanelInner(scope, elements);
+    } catch (e) {
+      console.error("[heading-master] 打开转换面板失败", e);
+      this.toast(`打开面板失败：${(e && e.message) || "未知错误"}（详情见控制台）`, 8000);
+    }
+  }
+
+  async openPanelInner(scope, elements) {
     const ed = activeEditor();
     if (!ed) {
       this.toast("没有打开中的文档");
@@ -1697,7 +1831,13 @@ class HeadingMaster extends Plugin {
     const cfg = this.settings;
     const plans = buildPlans(all, cfg, onlyIds);
     if (!plans.length) {
-      this.reportEmpty(all, onlyIds, { src, info: ed.info });
+      // 这里绝不能抛异常：以前弹一串诊断文字，看着就像报错
+      try {
+        this.showNoPlanPanel({ all, cfg, scope, scopeEls, onlyIds, src, info: ed.info });
+      } catch (e) {
+        console.error("[heading-master] 说明面板打开失败", e);
+        this.toast(`没有找到可转换的段落（${e && e.message ? e.message : "未知错误"}）`, 8000);
+      }
       return;
     }
 
@@ -1706,15 +1846,25 @@ class HeadingMaster extends Plugin {
 
   /* ---------------- 调整已有标题层级 ---------------- */
 
-  async openLevelPanel(scope, elements) {
+  async openLevelPanel(scope, elements, opts) {
+    try {
+      await this.openLevelPanelInner(scope, elements, opts);
+    } catch (e) {
+      console.error("[heading-master] 打开层级面板失败", e);
+      this.toast(`打开层级面板失败：${(e && e.message) || "未知错误"}（详情见控制台）`, 8000);
+    }
+  }
+
+  async openLevelPanelInner(scope, elements, opts) {
+    const o = opts || {};
     const ed = activeEditor();
     if (!ed) {
       this.toast("没有打开中的文档");
       return;
     }
     let docId = ed.docId || "";
-    let all = [];
-    if (docId) {
+    let all = o.blocks && o.blocks.length ? o.blocks : [];
+    if (!all.length && docId) {
       try {
         all = await this.loadBlocksFromKramdown(docId);
       } catch (e) {
@@ -1748,15 +1898,15 @@ class HeadingMaster extends Plugin {
       this.toast("这篇文档里没有可调整的标题块");
       return;
     }
-    this.renderLevelPanel(list, docId);
+    this.renderLevelPanel(list, docId, o.hint);
   }
 
-  renderLevelPanel(list, docId) {
+  renderLevelPanel(list, docId, hint) {
     const ui = showDialog({
       title: this.t("levelTitle", "调整标题层级"),
       width: "760px",
       height: "640px",
-      content: levelDialogHtml(list),
+      content: levelDialogHtml(list, hint),
     });
     const root = ui.el;
     if (!root) {
@@ -1793,8 +1943,7 @@ class HeadingMaster extends Plugin {
       const i = Number(t.getAttribute("data-idx"));
       if (!state[i]) return;
       state[i].to = clamp(Number(t.value) || 1, 1, 6);
-      const row = t.closest(".hm-hrow");
-      if (row) row.classList.toggle("hm-hrow--chg", state[i].to !== state[i].level);
+      paintLevelRow(t.closest(".hm-hrow"), state[i]);
       updateStat();
     });
 
@@ -2011,16 +2160,12 @@ class HeadingMaster extends Plugin {
       }
       if (t.classList.contains("hm-level")) {
         const i = Number(t.getAttribute("data-idx"));
-        const lv = Number(t.value);
+        const lv = clamp(Number(t.value) || 2, 1, 6);
         state[i].plan.outputs.forEach((o) => {
           if (o.kind === "h") o.level = lv;
         });
         const row = t.closest(".hm-item");
-        if (row) {
-          row.querySelectorAll('[data-chip="h"] .hm-lvnum').forEach((span) => {
-            span.textContent = "H" + lv;
-          });
-        }
+        if (row) paintChips(row, lv);
         return;
       }
       if (t.hasAttribute("data-cfg")) {
@@ -2195,6 +2340,12 @@ module.exports.__engine = {
   headingList,
   relevelHeadings,
   applyLevels,
+  levelRowHtml,
+  levelDialogHtml,
+  paintChips,
+  paintLevelRow,
+  renderRow,
+  noPlanHtml,
   parseKramdown,
   stripInline,
   normType,
